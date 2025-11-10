@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { AudioCaptureState, DisplayMediaOptions, CaptureError } from '../types/audio.types';
+import type { CaptureMode } from '../types/audio.types';
 
 export const useAudioCapture = () => {
   const [state, setState] = useState<AudioCaptureState>({
@@ -15,35 +16,49 @@ export const useAudioCapture = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioLevelIntervalRef = useRef<number | null>(null);
 
-  const startCapture = useCallback(async () => {
+  const startCapture = useCallback(async (mode: CaptureMode = 'system') => {
     try {
       setState(prev => ({ ...prev, error: null }));
 
-      const options: DisplayMediaOptions = {
-        video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          sampleRate: 48000,
-          channelCount: 2
-        },
-        systemAudio: 'include',
-        monitorTypeSurfaces: 'include'
-      };
+      const options: DisplayMediaOptions =
+        mode === 'system'
+          ? {
+              video: {
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30 },
+              },
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                sampleRate: 48000,
+                channelCount: 2,
+              },
+              systemAudio: 'include',
+              monitorTypeSurfaces: 'include',
+            }
+          : {
+              video: {
+                frameRate: { ideal: 30 },
+              },
+              audio: true,
+            };
 
       const stream = await navigator.mediaDevices.getDisplayMedia(options);
-      
+
       const audioTracks = stream.getAudioTracks();
       if (audioTracks.length === 0) {
         const error: CaptureError = {
           type: 'no-audio-track',
-          message: 'No audio track captured. Please ensure "Share audio" is enabled when selecting the screen.',
-          userAction: 'Please select "Share audio" when prompted to share your screen.'
+          message:
+            mode === 'system'
+              ? 'No audio track captured. Ensure "Share audio" is enabled when selecting the screen.'
+              : 'No audio track captured. Select the Teams browser tab and enable "Share audio".',
+          userAction:
+            mode === 'system'
+              ? 'Select "Share audio" when prompted and share Entire Screen.'
+              : 'Pick the Teams tab (Chrome/Edge) in the picker and tick "Share audio".',
         };
         setState(prev => ({ ...prev, error: error.message }));
         stream.getTracks().forEach(track => track.stop());
@@ -52,17 +67,17 @@ export const useAudioCapture = () => {
 
       const audioContext = new AudioContext({
         sampleRate: 48000,
-        latencyHint: 'interactive'
+        latencyHint: 'interactive',
       });
-      
+
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
-      
+
       analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0.8;
       analyser.minDecibels = -90;
       analyser.maxDecibels = -10;
-      
+
       source.connect(analyser);
 
       audioContextRef.current = audioContext;
@@ -71,10 +86,10 @@ export const useAudioCapture = () => {
       const updateAudioLevel = () => {
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(dataArray);
-        
+
         const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
         const normalizedLevel = Math.min(100, (average / 255) * 100);
-        
+
         setState(prev => ({ ...prev, audioLevel: normalizedLevel }));
       };
 
@@ -94,36 +109,35 @@ export const useAudioCapture = () => {
         error: null,
         stream,
       });
-
     } catch (error) {
       let captureError: CaptureError;
-      
+
       if (error instanceof Error) {
         if (error.name === 'NotAllowedError') {
           captureError = {
             type: 'permission-denied',
             message: 'Permission denied. Please allow screen sharing with audio.',
-            userAction: 'Please allow screen sharing when prompted by your browser.'
+            userAction: 'Please allow screen sharing when prompted by your browser.',
           };
         } else if (error.name === 'NotSupportedError') {
           captureError = {
             type: 'browser-unsupported',
-            message: 'Your browser does not support system audio capture.',
-            userAction: 'Please use Chrome or Edge on Windows.'
+            message:
+              mode === 'system'
+                ? 'Your browser does not support system audio capture.'
+                : 'Your browser does not support tab audio capture.',
+            userAction:
+              mode === 'system'
+                ? 'Use Chrome or Edge on Windows.'
+                : 'Use Chrome or Edge and select the Teams tab in the picker.',
           };
         } else {
-          captureError = {
-            type: 'unknown',
-            message: `Failed to capture audio: ${error.message}`,
-          };
+          captureError = { type: 'unknown', message: `Failed to capture audio: ${error.message}` };
         }
       } else {
-        captureError = {
-          type: 'unknown',
-          message: 'Failed to capture audio: Unknown error occurred',
-        };
+        captureError = { type: 'unknown', message: 'Failed to capture audio: Unknown error occurred' };
       }
-      
+
       setState(prev => ({ ...prev, error: captureError.message }));
       console.error('Audio capture error:', error);
     }

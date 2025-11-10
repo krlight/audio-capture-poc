@@ -37,9 +37,13 @@ export interface BrowserInfo {
   isChrome: boolean;
   isEdge: boolean;
   isWindows: boolean;
-  supportsSystemAudio: boolean;
   version: string;
+  supportsSystemAudio: boolean;
+  isMac?: boolean;
+  supportsTabAudio?: boolean;
 }
+
+export type CaptureMode = 'system' | 'tab';
 
 export interface CaptureError {
   type: 'permission-denied' | 'no-audio-track' | 'browser-unsupported' | 'unknown';

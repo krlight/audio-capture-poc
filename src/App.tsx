@@ -27,7 +27,7 @@ function App() {
       <div className="container mx-auto py-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">
-            Windows System Audio Capture Prototype
+            Audio Capture Prototype
           </h1>
           <p className="text-gray-400 text-sm">
             Browser: {browserInfo}
@@ -45,10 +45,11 @@ function App() {
               <div className="bg-red-800 rounded p-4">
                 <h3 className="text-red-200 font-medium mb-2">Requirements:</h3>
                 <ul className="text-red-300 text-sm space-y-1">
-                  <li>• Windows operating system</li>
                   <li>• Chrome 74+ or Edge 79+</li>
-                  <li>• HTTPS connection (for production)</li>
                   <li>• Screen sharing permissions enabled</li>
+                  <li>• HTTPS connection (for production)</li>
+                  <li>• System audio capture: Windows only (Chrome/Edge)</li>
+                  <li>• Tab audio capture: Windows or macOS (Chrome/Edge)</li>
                 </ul>
               </div>
             </div>

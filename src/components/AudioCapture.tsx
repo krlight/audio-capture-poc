@@ -1,9 +1,10 @@
-import React from 'react';
-import { Play, Square, Download, Trash2, Pause } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, Square, Download, Trash2 } from 'lucide-react';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useAudioAnalysis } from '../hooks/useAudioAnalysis';
 import { useAudioRecording } from '../hooks/useAudioRecording';
 import { AudioVisualizer } from './AudioVisualizer';
+import type { CaptureMode } from '../types/audio.types';
 
 export const AudioCapture: React.FC = () => {
   const { state: captureState, startCapture, stopCapture, getAnalyserNode } = useAudioCapture();
@@ -11,8 +12,10 @@ export const AudioCapture: React.FC = () => {
   const analysisData = useAudioAnalysis(analyserNode);
   const { state: recordingState, startRecording, stopRecording, clearRecording, downloadRecording, formatTime, formatFileSize } = useAudioRecording(captureState.stream);
 
+  const [mode, setMode] = useState<CaptureMode>('system');
+
   const handleStartCapture = async () => {
-    await startCapture();
+    await startCapture(mode);
   };
 
   const handleStopCapture = () => {
@@ -45,9 +48,11 @@ export const AudioCapture: React.FC = () => {
       <div className="bg-gray-800 rounded-lg p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white">System Audio Capture</h1>
+            <h1 className="text-2xl font-bold text-white">Audio Capture</h1>
             <p className="text-gray-400 text-sm mt-1">
-              Capture system audio from Windows Chrome/Edge by sharing your screen with audio enabled
+              {mode === 'system'
+                ? 'Capture system audio (Windows + Chrome/Edge)'
+                : 'Capture a browser tab’s audio (Chrome/Edge on Windows or macOS)'}
             </p>
           </div>
           
@@ -61,6 +66,21 @@ export const AudioCapture: React.FC = () => {
               {captureState.isCapturing ? 'Capturing' : 'Inactive'}
             </span>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3 mb-4">
+          <button
+            onClick={() => setMode('system')}
+            className={`px-3 py-2 rounded border ${mode === 'system' ? 'bg-blue-600 text-white border-blue-500' : 'bg-gray-700 text-gray-200 border-gray-600'}`}
+          >
+            System Audio (Windows)
+          </button>
+          <button
+            onClick={() => setMode('tab')}
+            className={`px-3 py-2 rounded border ${mode === 'tab' ? 'bg-blue-600 text-white border-blue-500' : 'bg-gray-700 text-gray-200 border-gray-600'}`}
+          >
+            Browser Tab Audio (Win/macOS)
+          </button>
         </div>
 
         {captureState.error && (
@@ -177,18 +197,27 @@ export const AudioCapture: React.FC = () => {
 
       <div className="bg-gray-800 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Instructions</h2>
-        <div className="space-y-2 text-gray-300 text-sm">
-          <p>1. Click "Start Capture" to begin</p>
-          <p>2. Select your entire screen when prompted</p>
-          <p>3. Make sure to check "Share audio" in the screen sharing dialog</p>
-          <p>4. Click "Start Recording" to save the audio data</p>
-          <p>5. Click "Stop Recording" to finish and download the audio file</p>
-        </div>
+        {mode === 'system' ? (
+          <div className="space-y-2 text-gray-300 text-sm">
+            <p>1. Click "Start Capture"</p>
+            <p>2. Select your Entire Screen when prompted</p>
+            <p>3. Check "Share audio" in the dialog</p>
+            <p>4. Click "Start Recording" to save audio</p>
+            <p>5. Click "Stop Recording" to finish and download</p>
+          </div>
+        ) : (
+          <div className="space-y-2 text-gray-300 text-sm">
+            <p>1. Click "Start Capture"</p>
+            <p>2. Choose the Teams browser tab in the picker</p>
+            <p>3. Check "Share audio" for the tab</p>
+            <p>4. Click "Start Recording" to save audio</p>
+            <p>5. Click "Stop Recording" to finish and download</p>
+          </div>
+        )}
         
         <div className="mt-4 p-3 bg-yellow-900 border border-yellow-700 rounded">
           <p className="text-yellow-200 text-sm">
-            <strong>Note:</strong> This only works on Windows with Chrome/Edge browsers. 
-            System audio is captured when sharing the entire screen with audio enabled.
+            <strong>Note:</strong> System audio works only on Windows (Chrome/Edge). Tab audio works on Windows and macOS in Chrome/Edge.
           </p>
         </div>
       </div>

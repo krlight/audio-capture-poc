@@ -5,6 +5,7 @@ export const detectBrowser = (): BrowserInfo => {
   const platform = navigator.platform;
   
   const isWindows = platform.toLowerCase().includes('win');
+  const isMac = platform.toLowerCase().includes('mac');
   
   const chromeMatch = userAgent.match(/Chrome\/(\d+)/);
   const edgeMatch = userAgent.match(/Edg\/(\d+)/);
@@ -27,39 +28,29 @@ export const detectBrowser = (): BrowserInfo => {
     return false;
   })();
 
+  // Tab audio via getDisplayMedia is supported in modern Chrome/Edge on Windows and macOS
+  const supportsTabAudio = (() => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return false;
+    if (!isChrome && !isEdge) return false;
+    const majorVersion = parseInt(version, 10);
+    if (isChrome && majorVersion >= 74) return true;
+    if (isEdge && majorVersion >= 79) return true;
+    return false;
+  })();
+
   return {
     isChrome,
     isEdge,
     isWindows,
-    supportsSystemAudio,
     version,
+    supportsSystemAudio,
+    isMac,
+    supportsTabAudio,
   };
 };
 
 export const checkBrowserCompatibility = (): { compatible: boolean; message: string } => {
   const browser = detectBrowser();
-  
-  if (!browser.isWindows) {
-    return {
-      compatible: false,
-      message: 'This prototype only works on Windows operating systems.',
-    };
-  }
-  
-  if (!browser.isChrome && !browser.isEdge) {
-    return {
-      compatible: false,
-      message: 'This prototype requires Chrome or Edge browser.',
-    };
-  }
-  
-  if (!browser.supportsSystemAudio) {
-    const browserName = browser.isEdge ? 'Edge' : 'Chrome';
-    return {
-      compatible: false,
-      message: `${browserName} version ${browser.version} may not support system audio capture. Please update to the latest version.`,
-    };
-  }
   
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
     return {
@@ -67,10 +58,24 @@ export const checkBrowserCompatibility = (): { compatible: boolean; message: str
       message: 'Your browser does not support screen capture APIs.',
     };
   }
+
+  if (browser.supportsSystemAudio) {
+    return {
+      compatible: true,
+      message: 'Browser supports system audio capture on Windows.',
+    };
+  }
+
+  if (browser.supportsTabAudio) {
+    return {
+      compatible: true,
+      message: 'Browser supports tab audio capture. Select the Teams tab and enable audio.',
+    };
+  }
   
   return {
-    compatible: true,
-    message: 'Browser is compatible with system audio capture.',
+    compatible: false,
+    message: 'Chrome or Edge required for audio capture. Update to the latest version.',
   };
 };
 
