@@ -1,0 +1,197 @@
+import React from 'react';
+import { Play, Square, Download, Trash2, Pause } from 'lucide-react';
+import { useAudioCapture } from '../hooks/useAudioCapture';
+import { useAudioAnalysis } from '../hooks/useAudioAnalysis';
+import { useAudioRecording } from '../hooks/useAudioRecording';
+import { AudioVisualizer } from './AudioVisualizer';
+
+export const AudioCapture: React.FC = () => {
+  const { state: captureState, startCapture, stopCapture, getAnalyserNode } = useAudioCapture();
+  const analyserNode = getAnalyserNode();
+  const analysisData = useAudioAnalysis(analyserNode);
+  const { state: recordingState, startRecording, stopRecording, clearRecording, downloadRecording, formatTime, formatFileSize } = useAudioRecording(captureState.stream);
+
+  const handleStartCapture = async () => {
+    await startCapture();
+  };
+
+  const handleStopCapture = () => {
+    stopCapture();
+    if (recordingState.isRecording) {
+      stopRecording();
+    }
+  };
+
+  const handleStartRecording = async () => {
+    if (captureState.hasAudioTrack) {
+      await startRecording();
+    }
+  };
+
+  const handleStopRecording = () => {
+    stopRecording();
+  };
+
+  const handleClearRecording = () => {
+    clearRecording();
+  };
+
+  const handleDownloadRecording = () => {
+    downloadRecording();
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="bg-gray-800 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">System Audio Capture</h1>
+            <p className="text-gray-400 text-sm mt-1">
+              Capture system audio from Windows Chrome/Edge by sharing your screen with audio enabled
+            </p>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <div
+              className={`w-3 h-3 rounded-full ${
+                captureState.isCapturing ? 'bg-green-500 animate-pulse' : 'bg-gray-600'
+              }`}
+            />
+            <span className="text-sm text-gray-300">
+              {captureState.isCapturing ? 'Capturing' : 'Inactive'}
+            </span>
+          </div>
+        </div>
+
+        {captureState.error && (
+          <div className="bg-red-900 border border-red-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-2">
+              <div className="text-red-400">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-red-200 font-medium">Error</p>
+                <p className="text-red-300 text-sm">{captureState.error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 mb-6">
+          {!captureState.isCapturing ? (
+            <button
+              onClick={handleStartCapture}
+              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <Play className="w-4 h-4" />
+              <span>Start Capture</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleStopCapture}
+              className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <Square className="w-4 h-4" />
+              <span>Stop Capture</span>
+            </button>
+          )}
+
+          {captureState.hasAudioTrack && (
+            <>
+              {!recordingState.isRecording ? (
+                <button
+                  onClick={handleStartRecording}
+                  disabled={!captureState.hasAudioTrack}
+                  className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  <span>Start Recording</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleStopRecording}
+                  className="flex items-center space-x-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Square className="w-4 h-4" />
+                  <span>Stop Recording</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {recordingState.isRecording && (
+          <div className="bg-green-900 border border-green-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-green-200 font-medium">Recording</span>
+              </div>
+              <div className="text-green-300 font-mono text-lg">
+                {formatTime(recordingState.recordingTime)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {recordingState.downloadUrl && (
+          <div className="bg-blue-900 border border-blue-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-200 font-medium">Recording Complete</p>
+                <p className="text-blue-300 text-sm">
+                  Size: {formatFileSize(recordingState.fileSize)} | Duration: {formatTime(recordingState.recordingTime)}
+                </p>
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleDownloadRecording}
+                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download</span>
+                </button>
+                <button
+                  onClick={handleClearRecording}
+                  className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {captureState.isCapturing && (
+        <AudioVisualizer
+          frequencyData={analysisData.frequencyData}
+          waveformData={analysisData.waveformData}
+          audioLevel={analysisData.audioLevel}
+          isActive={captureState.hasAudioTrack}
+        />
+      )}
+
+      <div className="bg-gray-800 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-white mb-4">Instructions</h2>
+        <div className="space-y-2 text-gray-300 text-sm">
+          <p>1. Click "Start Capture" to begin</p>
+          <p>2. Select your entire screen when prompted</p>
+          <p>3. Make sure to check "Share audio" in the screen sharing dialog</p>
+          <p>4. Click "Start Recording" to save the audio data</p>
+          <p>5. Click "Stop Recording" to finish and download the audio file</p>
+        </div>
+        
+        <div className="mt-4 p-3 bg-yellow-900 border border-yellow-700 rounded">
+          <p className="text-yellow-200 text-sm">
+            <strong>Note:</strong> This only works on Windows with Chrome/Edge browsers. 
+            System audio is captured when sharing the entire screen with audio enabled.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
