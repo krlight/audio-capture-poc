@@ -31,6 +31,8 @@ export interface AudioRecorderState {
   chunks: Blob[];
   downloadUrl: string | null;
   fileSize: number;
+  downloadMimeType?: string;
+  fileExtension?: string;
 }
 
 export interface BrowserInfo {
@@ -44,6 +46,33 @@ export interface BrowserInfo {
 }
 
 export type CaptureMode = 'system' | 'tab';
+
+export interface BrowserInfo {
+  browser: 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Unknown';
+  version: string;
+  isWindows: boolean;
+  isMac: boolean;
+  supportsSystemAudio: boolean;
+  supportsTabAudio: boolean;
+}
+
+export type RecordingFormat =
+  | 'webm_opus'
+  | 'webm'
+  | 'wav'
+  | 'ogg_vorbis'
+  | 'mp3'
+  | 'mp4_aac'
+  | 'flac';
+
+export interface RecordingFormatInfo {
+  format: RecordingFormat;
+  label: string;
+  description: string;
+  preferredMimeTypes: string[];
+  extension: string;
+  defaultBitRate: number; // bits per second
+}
 
 export interface CaptureError {
   type: 'permission-denied' | 'no-audio-track' | 'browser-unsupported' | 'unknown';

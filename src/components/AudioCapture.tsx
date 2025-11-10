@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
-import { Play, Square, Download, Trash2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Play, Square, Download, Trash2, Info } from 'lucide-react';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useAudioAnalysis } from '../hooks/useAudioAnalysis';
 import { useAudioRecording } from '../hooks/useAudioRecording';
 import { AudioVisualizer } from './AudioVisualizer';
-import type { CaptureMode } from '../types/audio.types';
+import type { CaptureMode, RecordingFormat } from '../types/audio.types';
 
 export const AudioCapture: React.FC = () => {
   const { state: captureState, startCapture, stopCapture, getAnalyserNode } = useAudioCapture();
   const analyserNode = getAnalyserNode();
   const analysisData = useAudioAnalysis(analyserNode);
-  const { state: recordingState, startRecording, stopRecording, clearRecording, downloadRecording, formatTime, formatFileSize } = useAudioRecording(captureState.stream);
-
   const [mode, setMode] = useState<CaptureMode>('system');
+  const [format, setFormat] = useState<RecordingFormat>('webm_opus');
+
+  // Hook with desired format
+  const {
+    state: recordingState,
+    startRecording,
+    stopRecording,
+    clearRecording,
+    downloadRecording,
+    formatTime,
+    formatFileSize,
+    getSupportedFormats,
+    availableFormats,
+    estimatedFileSize,
+  } = useAudioRecording(captureState.stream, format);
+
+  const supportedFormats = useMemo(() => getSupportedFormats(), [getSupportedFormats]);
 
   const handleStartCapture = async () => {
     await startCapture(mode);
@@ -26,9 +41,9 @@ export const AudioCapture: React.FC = () => {
   };
 
   const handleStartRecording = async () => {
-    if (captureState.hasAudioTrack) {
-      await startRecording();
-    }
+    if (!captureState.isCapturing) return;
+    if (!captureState.hasAudioTrack) return; // guard when audio not shared
+    await startRecording();
   };
 
   const handleStopRecording = () => {
@@ -81,6 +96,21 @@ export const AudioCapture: React.FC = () => {
           >
             Browser Tab Audio (Win/macOS)
           </button>
+
+          <div className="flex items-center space-x-2 ml-auto">
+            <label className="text-sm text-gray-300">Export format:</label>
+            <select
+              value={format}
+              onChange={(e) => setFormat(e.target.value as RecordingFormat)}
+              className="bg-gray-700 text-white text-sm px-3 py-2 rounded border border-gray-600"
+            >
+              {availableFormats.map(f => (
+                <option key={f.format} value={f.format} disabled={!supportedFormats.some(sf => sf.format === f.format)}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {captureState.error && (
@@ -92,8 +122,22 @@ export const AudioCapture: React.FC = () => {
                 </svg>
               </div>
               <div>
-                <p className="text-red-200 font-medium">Error</p>
+                <p className="text-red-200 font-medium">Capture Error</p>
                 <p className="text-red-300 text-sm">{captureState.error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {recordingState.error && (
+          <div className="bg-red-900 border border-red-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-2">
+              <div className="text-red-400">
+                <Info className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-red-200 font-medium">Recording Error</p>
+                <p className="text-red-300 text-sm">{recordingState.error}</p>
               </div>
             </div>
           </div>
@@ -118,7 +162,7 @@ export const AudioCapture: React.FC = () => {
             </button>
           )}
 
-          {captureState.hasAudioTrack && (
+          {captureState.isCapturing && (
             <>
               {!recordingState.isRecording ? (
                 <button
@@ -138,6 +182,12 @@ export const AudioCapture: React.FC = () => {
                   <span>Stop Recording</span>
                 </button>
               )}
+
+              {!captureState.hasAudioTrack && (
+                <div className="text-xs text-yellow-200 bg-yellow-900 border border-yellow-700 rounded px-2 py-1">
+                  Enable "Share audio" in the picker to record.
+                </div>
+              )}
             </>
           )}
         </div>
@@ -153,6 +203,9 @@ export const AudioCapture: React.FC = () => {
                 {formatTime(recordingState.recordingTime)}
               </div>
             </div>
+            <div className="text-xs text-green-200 mt-2">
+              Est. size at default bitrate: {estimatedFileSize(recordingState.recordingTime, (availableFormats.find(f => f.format === format)?.defaultBitRate) ?? 128000)}
+            </div>
           </div>
         )}
 
@@ -163,6 +216,9 @@ export const AudioCapture: React.FC = () => {
                 <p className="text-blue-200 font-medium">Recording Complete</p>
                 <p className="text-blue-300 text-sm">
                   Size: {formatFileSize(recordingState.fileSize)} | Duration: {formatTime(recordingState.recordingTime)}
+                </p>
+                <p className="text-blue-300 text-xs">
+                  Type: {recordingState.downloadMimeType || 'unknown'} | File: .{recordingState.fileExtension || 'webm'}
                 </p>
               </div>
               <div className="flex space-x-2">
