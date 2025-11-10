@@ -11,7 +11,7 @@ export const AudioCapture: React.FC = () => {
   const analyserNode = getAnalyserNode();
   const analysisData = useAudioAnalysis(analyserNode);
   const [mode, setMode] = useState<CaptureMode>('system');
-  const [format, setFormat] = useState<RecordingFormat>('webm_opus');
+  const [format, setFormat] = useState<RecordingFormat>('mp4_aac');
 
   // Hook with desired format
   const {

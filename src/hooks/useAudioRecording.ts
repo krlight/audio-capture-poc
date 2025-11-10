@@ -11,63 +11,39 @@ export interface AudioRecorderState {
   fileExtension?: string | null;
 }
 
-// Comprehensive format metadata
+// Formats: MP3 (when available), M4A (AAC), WebM (Opus/generic)
 const AVAILABLE_FORMATS: RecordingFormatInfo[] = [
   {
-    format: 'webm_opus',
-    label: 'WebM (Opus)',
-    description: 'High quality, small size. Best cross-browser choice.',
-    preferredMimeTypes: ['audio/webm;codecs=opus', 'audio/webm'],
-    extension: 'webm',
-    defaultBitRate: 128_000,
-  },
-  {
-    format: 'wav',
-    label: 'WAV (PCM)',
-    description: 'Uncompressed. Large size. Good for editing and archiving.',
-    preferredMimeTypes: ['audio/wav'],
-    extension: 'wav',
-    defaultBitRate: 1_411_200, // 16-bit 44.1kHz stereo approx
-  },
-  {
-    format: 'ogg_vorbis',
-    label: 'OGG (Vorbis)',
-    description: 'Open format. Good quality. Best on Firefox/Linux.',
-    preferredMimeTypes: ['audio/ogg; codecs=vorbis', 'audio/ogg'],
-    extension: 'ogg',
-    defaultBitRate: 128_000,
-  },
-  {
-    format: 'webm',
-    label: 'WebM (Generic)',
-    description: 'Generic WebM when Opus is not reported available.',
-    preferredMimeTypes: ['audio/webm'],
-    extension: 'webm',
-    defaultBitRate: 96_000,
-  },
-  {
-    format: 'mp4_aac',
-    label: 'MP4 (AAC)',
-    description: 'Widely compatible container; audio-only support varies by browser.',
-    preferredMimeTypes: ['audio/mp4; codecs=aac', 'audio/mp4'],
-    extension: 'm4a',
-    defaultBitRate: 128_000,
-  },
-  {
     format: 'mp3',
-    label: 'MP3 (MPEG-1 Layer III)',
-    description: 'Legacy, broadly supported. Encoding availability varies in browsers.',
+    label: 'MP3 (.mp3)',
+    description: 'Common format. Recording support varies by browser.',
     preferredMimeTypes: ['audio/mpeg'],
     extension: 'mp3',
     defaultBitRate: 128_000,
   },
   {
-    format: 'flac',
-    label: 'FLAC (Lossless)',
-    description: 'Lossless compression. Support in MediaRecorder is rare.',
-    preferredMimeTypes: ['audio/flac'],
-    extension: 'flac',
-    defaultBitRate: 700_000, // placeholder estimate
+    format: 'mp4_aac',
+    label: 'MP4 (AAC, .m4a)',
+    description: 'Preferred when supported. Widely compatible playback.',
+    preferredMimeTypes: ['audio/mp4; codecs=aac', 'audio/mp4'],
+    extension: 'm4a',
+    defaultBitRate: 128_000,
+  },
+  {
+    format: 'webm_opus',
+    label: 'WebM (Opus)',
+    description: 'High quality, small size. Excellent on Chrome/Edge.',
+    preferredMimeTypes: ['audio/webm;codecs=opus', 'audio/webm'],
+    extension: 'webm',
+    defaultBitRate: 128_000,
+  },
+  {
+    format: 'webm',
+    label: 'WebM (Generic)',
+    description: 'Fallback WebM when Opus is not reported available.',
+    preferredMimeTypes: ['audio/webm'],
+    extension: 'webm',
+    defaultBitRate: 96_000,
   },
 ];
 
@@ -80,10 +56,11 @@ function isTypeSupported(mime: string): boolean {
 }
 
 export function getSupportedFormats(): RecordingFormatInfo[] {
-  return AVAILABLE_FORMATS.map((f) => ({
+  const results = AVAILABLE_FORMATS.map((f) => ({
     ...f,
     preferredMimeTypes: f.preferredMimeTypes.filter(isTypeSupported),
   }));
+  return results.filter((f) => f.preferredMimeTypes.length > 0);
 }
 
 export function getBestMimeTypeForFormat(format: RecordingFormat): string | null {
@@ -128,23 +105,14 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
       }
       const audioOnlyStream = new MediaStream([audioTrack]);
 
-      // Choose target format and fallback chain
-      const targetFormat = desiredFormat || 'webm_opus';
-      const formatInfo = getFormatInfo(targetFormat) || getFormatInfo('webm_opus')!;
+      // Choose target format and fallback chain (MP3 → M4A → WebM Opus → WebM)
+      const targetFormat = desiredFormat || 'mp3';
+      const fallbackChain: RecordingFormat[] = ['mp3', 'mp4_aac', 'webm_opus', 'webm'];
+      const formatInfo = getFormatInfo(targetFormat) || getFormatInfo('mp3')!;
 
       let mimeType = getBestMimeTypeForFormat(targetFormat);
       if (!mimeType) {
-        // Progressive fallback across all formats by preference order
-        const fallbackCandidates: RecordingFormat[] = [
-          'webm_opus', // best quality small size
-          'webm',
-          'ogg_vorbis',
-          'mp4_aac',
-          'mp3',
-          'wav',
-          'flac',
-        ];
-        for (const f of fallbackCandidates) {
+        for (const f of fallbackChain) {
           mimeType = getBestMimeTypeForFormat(f);
           if (mimeType) {
             break;
@@ -286,10 +254,7 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
 function inferExtensionFromMime(mime: string): string | null {
   if (!mime) return null;
   if (mime.includes('webm')) return 'webm';
-  if (mime.includes('ogg')) return 'ogg';
-  if (mime.includes('mpeg')) return 'mp3';
-  if (mime.includes('wav')) return 'wav';
-  if (mime.includes('flac')) return 'flac';
   if (mime.includes('mp4')) return 'm4a';
+  if (mime.includes('mpeg')) return 'mp3';
   return null;
 }

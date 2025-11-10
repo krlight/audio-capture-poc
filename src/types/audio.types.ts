@@ -56,14 +56,7 @@ export interface BrowserInfo {
   supportsTabAudio: boolean;
 }
 
-export type RecordingFormat =
-  | 'webm_opus'
-  | 'webm'
-  | 'wav'
-  | 'ogg_vorbis'
-  | 'mp3'
-  | 'mp4_aac'
-  | 'flac';
+export type RecordingFormat = 'webm_opus' | 'webm' | 'mp4_aac' | 'mp3';
 
 export interface RecordingFormatInfo {
   format: RecordingFormat;
