@@ -1,57 +1,37 @@
-# React + TypeScript + Vite
+# System Audio Capture Prototype
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite proof of concept that captures screen audio (system audio on Windows, or any shared tab) and records it in the browser. While capturing, you can trigger a live "TTS" (speech-to-text) mode that streams short WAV chunks to a local Whisper server for instant subtitles.
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js ≥ 20 (project tested with pnpm but npm/yarn work too)
+- Python 3.12 for the Whisper server
+- ffmpeg available on the server PATH (only needed when non-WAV uploads arrive)
 
-## Expanding the ESLint configuration
+## Frontend setup
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+pnpm install
+pnpm dev
+# open http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The UI lets you start/stop capture, record to a downloadable WebM file, and toggle **Enable Live TTS**, which streams WAV audio every 5 seconds to `http://localhost:5005/transcribe`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Whisper server (Python 3.12)
 
-export default tseslint.config({
-  extends: [
-    // other configs...
-    // Enable lint rules for React
-    reactX.configs['recommended-typescript'],
-    // Enable lint rules for React DOM
-    reactDom.configs.recommended,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+cd whisper_server
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py  # listens on port 5005 by default
 ```
+
+The Flask server lazy-loads `openai-whisper` weights, accepts the WAV chunks coming from the browser, and responds with JSON transcripts that the UI overlays as subtitles. Keep it running whenever you want the Live TTS button to work.
+
+## Notes
+
+- Live TTS uploads now leave the browser as mono 16 kHz WAV chunks, so the server usually skips its ffmpeg shim.
+- Downloads still rely on the browser-native MediaRecorder container (WebM/Opus in Chrome) because it's the least brittle format for end users.
+- For production deployment make sure the site is served over HTTPS and that screen/audio capture permissions are granted.

@@ -41,20 +41,12 @@ export interface BrowserInfo {
   isWindows: boolean;
   version: string;
   supportsSystemAudio: boolean;
-  isMac?: boolean;
-  supportsTabAudio?: boolean;
+  isMac: boolean;
+  supportsTabAudio: boolean;
+  browserName?: 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Unknown';
 }
 
 export type CaptureMode = 'system' | 'tab';
-
-export interface BrowserInfo {
-  browser: 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Unknown';
-  version: string;
-  isWindows: boolean;
-  isMac: boolean;
-  supportsSystemAudio: boolean;
-  supportsTabAudio: boolean;
-}
 
 export type RecordingFormat = 'webm_opus' | 'webm' | 'mp4_aac' | 'mp3';
 
@@ -71,4 +63,17 @@ export interface CaptureError {
   type: 'permission-denied' | 'no-audio-track' | 'browser-unsupported' | 'unknown';
   message: string;
   userAction?: string;
+}
+
+export interface TranscriptionSegment {
+  start?: number;
+  end?: number;
+  text: string;
+}
+
+export interface TranscriptionResponse {
+  text: string;
+  detected_language?: string;
+  duration?: number;
+  segments?: TranscriptionSegment[];
 }

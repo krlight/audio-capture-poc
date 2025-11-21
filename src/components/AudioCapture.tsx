@@ -1,19 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Play, Square, Download, Trash2, Info } from 'lucide-react';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useAudioAnalysis } from '../hooks/useAudioAnalysis';
 import { useAudioRecording } from '../hooks/useAudioRecording';
 import { AudioVisualizer } from './AudioVisualizer';
-import type { CaptureMode, RecordingFormat } from '../types/audio.types';
+import { SubtitleOverlay } from './SubtitleOverlay';
+import type { CaptureMode } from '../types/audio.types';
 
 export const AudioCapture: React.FC = () => {
   const { state: captureState, startCapture, stopCapture, getAnalyserNode } = useAudioCapture();
   const analyserNode = getAnalyserNode();
   const analysisData = useAudioAnalysis(analyserNode);
   const [mode, setMode] = useState<CaptureMode>('system');
-  const [format, setFormat] = useState<RecordingFormat>('mp4_aac');
+  const [subtitles, setSubtitles] = useState<string[]>([]);
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [overlaySize, setOverlaySize] = useState(22);
 
-  // Hook with desired format
+  // Recording and live transcription helpers
   const {
     state: recordingState,
     startRecording,
@@ -22,12 +25,24 @@ export const AudioCapture: React.FC = () => {
     downloadRecording,
     formatTime,
     formatFileSize,
-    getSupportedFormats,
-    availableFormats,
     estimatedFileSize,
-  } = useAudioRecording(captureState.stream, format);
-
-  const supportedFormats = useMemo(() => getSupportedFormats(), [getSupportedFormats]);
+    startLiveSubtitles,
+    stopLiveSubtitles,
+    liveSubtitlesEnabled,
+  } = useAudioRecording(captureState.stream, {
+    streamToServer: false,
+    segmentDurationSec: 5,
+    onTranscription: (r) => {
+      const t = (r?.text || '').replace(/\s+/g, ' ').trim();
+      if (!t) return;
+      setSubtitles((prev) => {
+        const last = prev[prev.length - 1] || '';
+        if (t === last) return prev;
+        const merged = [...prev, t].slice(-200);
+        return merged;
+      });
+    },
+  });
 
   const handleStartCapture = async () => {
     await startCapture(mode);
@@ -52,6 +67,7 @@ export const AudioCapture: React.FC = () => {
 
   const handleClearRecording = () => {
     clearRecording();
+    setSubtitles([]);
   };
 
   const handleDownloadRecording = () => {
@@ -98,18 +114,7 @@ export const AudioCapture: React.FC = () => {
           </button>
 
           <div className="flex items-center space-x-2 ml-auto">
-            <label className="text-sm text-gray-300">Export format:</label>
-            <select
-              value={format}
-              onChange={(e) => setFormat(e.target.value as RecordingFormat)}
-              className="bg-gray-700 text-white text-sm px-3 py-2 rounded border border-gray-600"
-            >
-              {availableFormats.map(f => (
-                <option key={f.format} value={f.format} disabled={!supportedFormats.some(sf => sf.format === f.format)}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
+            <span className="text-sm text-gray-300">Live TTS chunks upload as WAV (16 kHz mono)</span>
           </div>
         </div>
 
@@ -183,6 +188,25 @@ export const AudioCapture: React.FC = () => {
                 </button>
               )}
 
+              {!liveSubtitlesEnabled ? (
+                <button
+                  onClick={startLiveSubtitles}
+                  disabled={!captureState.hasAudioTrack}
+                  className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  <span>Enable Live TTS</span>
+                </button>
+              ) : (
+                <button
+                  onClick={stopLiveSubtitles}
+                  className="flex items-center space-x-2 bg-purple-800 hover:bg-purple-900 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Square className="w-4 h-4" />
+                  <span>Disable Live TTS</span>
+                </button>
+              )}
+
               {!captureState.hasAudioTrack && (
                 <div className="text-xs text-yellow-200 bg-yellow-900 border border-yellow-700 rounded px-2 py-1">
                   Enable "Share audio" in the picker to record.
@@ -204,7 +228,7 @@ export const AudioCapture: React.FC = () => {
               </div>
             </div>
             <div className="text-xs text-green-200 mt-2">
-              Est. size at default bitrate: {estimatedFileSize(recordingState.recordingTime, (availableFormats.find(f => f.format === format)?.defaultBitRate) ?? 128000)}
+              Est. size at current bitrate: {estimatedFileSize(recordingState.recordingTime, recordingState.activeBitRate ?? 128000)}
             </div>
           </div>
         )}
@@ -240,6 +264,46 @@ export const AudioCapture: React.FC = () => {
             </div>
           </div>
         )}
+
+        {subtitles.length > 0 && (
+          <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-white font-medium">Live Transcript</p>
+              <button
+                onClick={() => setSubtitles([])}
+                className="text-sm bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="text-gray-200 text-sm space-y-2 max-h-48 overflow-auto">
+              {subtitles.map((line, idx) => (
+                <p key={idx}>{line}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 mb-4">
+          <label className="flex items-center gap-2 text-sm text-gray-200">
+            <input
+              type="checkbox"
+              checked={showOverlay}
+              onChange={(e) => setShowOverlay(e.target.checked)}
+            />
+            Show Subtitles Overlay
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-200">
+            Size
+            <input
+              type="range"
+              min={16}
+              max={36}
+              value={overlaySize}
+              onChange={(e) => setOverlaySize(parseInt(e.target.value, 10))}
+            />
+          </label>
+        </div>
       </div>
 
       {captureState.isCapturing && (
@@ -251,6 +315,15 @@ export const AudioCapture: React.FC = () => {
         />
       )}
 
+      <SubtitleOverlay
+        lines={subtitles}
+        visible={showOverlay}
+        fontSizePx={overlaySize}
+        opacity={0.9}
+        position="bottom"
+        maxLines={3}
+      />
+
       <div className="bg-gray-800 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Instructions</h2>
         {mode === 'system' ? (
@@ -260,6 +333,7 @@ export const AudioCapture: React.FC = () => {
             <p>3. Check "Share audio" in the dialog</p>
             <p>4. Click "Start Recording" to save audio</p>
             <p>5. Click "Stop Recording" to finish and download</p>
+            <p>6. Optional: Click "Enable Live TTS" to stream text from the local Whisper server.</p>
           </div>
         ) : (
           <div className="space-y-2 text-gray-300 text-sm">
@@ -268,8 +342,15 @@ export const AudioCapture: React.FC = () => {
             <p>3. Check "Share audio" for the tab</p>
             <p>4. Click "Start Recording" to save audio</p>
             <p>5. Click "Stop Recording" to finish and download</p>
+            <p>6. Optional: Click "Enable Live TTS" to stream text from the local Whisper server.</p>
           </div>
         )}
+        
+        <div className="mt-4 p-3 bg-purple-900 border border-purple-700 rounded">
+          <p className="text-purple-100 text-sm">
+            Live TTS sends small WAV chunks (5 seconds) to <code>http://localhost:5005/transcribe</code>. Keep the Whisper server running to see subtitles update in real time.
+          </p>
+        </div>
         
         <div className="mt-4 p-3 bg-yellow-900 border border-yellow-700 rounded">
           <p className="text-yellow-200 text-sm">

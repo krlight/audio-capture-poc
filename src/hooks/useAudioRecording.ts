@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { RecordingFormat, RecordingFormatInfo } from '../types/audio.types';
+import { transcribeBlob, type TranscriptionResponse } from '../services/transcription';
+import { ensureWavBlob } from '../utils/audioProcessing';
 
 export interface AudioRecorderState {
   isRecording: boolean;
@@ -9,6 +11,8 @@ export interface AudioRecorderState {
   error: string | null;
   downloadMimeType?: string | null;
   fileExtension?: string | null;
+  activeBitRate?: number | null;
+  activeMimeType?: string | null;
 }
 
 // Formats: MP3 (when available), M4A (AAC), WebM (Opus/generic)
@@ -74,10 +78,18 @@ export function getFormatInfo(format: RecordingFormat): RecordingFormatInfo | un
   return AVAILABLE_FORMATS.find((f) => f.format === format);
 }
 
-export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: RecordingFormat) {
+export function useAudioRecording(
+  stream?: MediaStream | null,
+  opts?: { streamToServer?: boolean; segmentDurationSec?: number; onTranscription?: (r: TranscriptionResponse) => void }
+) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const segmentChunksRef = useRef<Blob[]>([]);
+  const segmentElapsedMsRef = useRef<number>(0);
+  const liveRecorderRef = useRef<MediaRecorder | null>(null);
+  const liveLoopActiveRef = useRef<boolean>(false);
+  const [liveSubtitlesEnabled, setLiveSubtitlesEnabled] = useState<boolean>(false);
   const [state, setState] = useState<AudioRecorderState>({
     isRecording: false,
     recordingTime: 0,
@@ -86,9 +98,31 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
     error: null,
     downloadMimeType: null,
     fileExtension: null,
+    activeBitRate: null,
+    activeMimeType: null,
   });
 
-  const availableFormats = useMemo(() => AVAILABLE_FORMATS, []);
+  const sendChunkToTranscription = useCallback(
+    async (chunk: Blob) => {
+      if (!chunk || chunk.size === 0) return;
+      try {
+        let payload = chunk;
+        if (!chunk.type?.includes('wav')) {
+          try {
+            payload = await ensureWavBlob(chunk);
+          } catch (conversionError) {
+            console.warn('Falling back to raw chunk for transcription', conversionError);
+            payload = chunk;
+          }
+        }
+        const response = await transcribeBlob(payload);
+        if (opts?.onTranscription) opts?.onTranscription(response);
+      } catch (e: any) {
+        setState((s) => ({ ...s, error: `Upload failed: ${e?.message || String(e)}` }));
+      }
+    },
+    [opts?.onTranscription],
+  );
 
   const startRecording = useCallback(async () => {
     if (!stream) {
@@ -105,33 +139,43 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
       }
       const audioOnlyStream = new MediaStream([audioTrack]);
 
-      // Choose target format and fallback chain (MP3 → M4A → WebM Opus → WebM)
-      const targetFormat = desiredFormat || 'mp3';
-      const fallbackChain: RecordingFormat[] = ['mp3', 'mp4_aac', 'webm_opus', 'webm'];
-      const formatInfo = getFormatInfo(targetFormat) || getFormatInfo('mp3')!;
+      const targetFormat: RecordingFormat = 'webm_opus';
+      const formatInfo = getFormatInfo(targetFormat)!;
 
-      let mimeType = getBestMimeTypeForFormat(targetFormat);
+      const mimeType = getBestMimeTypeForFormat(targetFormat);
       if (!mimeType) {
-        for (const f of fallbackChain) {
-          mimeType = getBestMimeTypeForFormat(f);
-          if (mimeType) {
-            break;
-          }
-        }
+        setState((s) => ({ ...s, error: 'WebM Opus recording is not supported in this browser.' }));
+        return;
       }
 
       // As a last resort, omit type
-      const options: MediaRecorderOptions = mimeType
-        ? { mimeType, audioBitsPerSecond: formatInfo?.defaultBitRate }
-        : { audioBitsPerSecond: formatInfo?.defaultBitRate };
+      const options: MediaRecorderOptions = { mimeType, audioBitsPerSecond: formatInfo?.defaultBitRate };
 
       const recorder = new MediaRecorder(audioOnlyStream, options);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
+      const timesliceMs = 250;
+      const segmentTargetMs = Math.max(1000, (opts?.segmentDurationSec || 5) * 1000);
+      const overlapMs = 1000;
+      const overlapCount = Math.ceil(overlapMs / timesliceMs);
+
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
-          chunksRef.current.push(event.data);
+          const chunk = event.data;
+          chunksRef.current.push(chunk);
+          if (opts?.streamToServer) {
+            segmentChunksRef.current.push(chunk);
+            segmentElapsedMsRef.current += timesliceMs;
+            if (segmentElapsedMsRef.current >= segmentTargetMs) {
+              const segBlob = new Blob(segmentChunksRef.current, { type: mimeType || undefined });
+              const keep = Math.min(segmentChunksRef.current.length, overlapCount);
+              const tail = keep > 0 ? segmentChunksRef.current.slice(-keep) : [];
+              segmentChunksRef.current = tail;
+              segmentElapsedMsRef.current = keep * timesliceMs;
+              void sendChunkToTranscription(segBlob);
+            }
+          }
         }
       };
 
@@ -155,12 +199,27 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
           fileSize: blob.size,
           downloadMimeType: blob.type || mimeType || null,
           fileExtension: ext,
+          activeBitRate: null,
+          activeMimeType: null,
         }));
+
+        if (opts?.streamToServer && segmentChunksRef.current.length > 0) {
+          const segBlob = new Blob(segmentChunksRef.current, { type: mimeType || undefined });
+          segmentChunksRef.current = [];
+          segmentElapsedMsRef.current = 0;
+          void sendChunkToTranscription(segBlob);
+        }
       };
 
-      recorder.start(250); // collect data every 250ms for responsiveness
+      recorder.start(250);
 
-      setState((s) => ({ ...s, isRecording: true, error: null }));
+      setState((s) => ({
+        ...s,
+        isRecording: true,
+        error: null,
+        activeBitRate: options.audioBitsPerSecond || null,
+        activeMimeType: mimeType || null,
+      }));
 
       // Start timer
       if (timerRef.current) {
@@ -172,7 +231,7 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
     } catch (err: any) {
       setState((s) => ({ ...s, error: `Failed to start recording: ${err?.message || String(err)}` }));
     }
-  }, [stream, desiredFormat]);
+  }, [stream, sendChunkToTranscription]);
 
   const stopRecording = useCallback(() => {
     try {
@@ -193,6 +252,8 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
       if (state.downloadUrl) {
         URL.revokeObjectURL(state.downloadUrl);
       }
+      segmentChunksRef.current = [];
+      segmentElapsedMsRef.current = 0;
       setState((s) => ({
         ...s,
         downloadUrl: null,
@@ -201,6 +262,8 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
         downloadMimeType: null,
         fileExtension: null,
         error: null,
+        activeBitRate: null,
+        activeMimeType: null,
       }));
     } catch (err: any) {
       setState((s) => ({ ...s, error: `Failed to clear recording: ${err?.message || String(err)}` }));
@@ -245,14 +308,116 @@ export function useAudioRecording(stream?: MediaStream | null, desiredFormat?: R
     downloadRecording,
     formatTime,
     formatFileSize,
-    getSupportedFormats,
-    availableFormats,
     estimatedFileSize,
+    startLiveSubtitles: useCallback(async () => {
+      if (liveSubtitlesEnabled) return;
+      if (!stream) {
+        setState((s) => ({ ...s, error: 'No audio stream available to start live subtitles.' }));
+        return;
+      }
+      try {
+        const fmt = getFormatInfo('webm_opus')!;
+        const mime = getBestMimeTypeForFormat('webm_opus');
+        if (!mime) {
+          setState((s) => ({ ...s, error: 'WebM Opus recording is not supported in this browser.' }));
+          return;
+        }
+
+        const segmentTargetMs = Math.max(1000, (opts?.segmentDurationSec || 5) * 1000);
+        liveLoopActiveRef.current = true;
+
+        const startSegmentRecorder = () => {
+          if (!liveLoopActiveRef.current) {
+            return;
+          }
+
+          const freshTrack = stream.getAudioTracks()[0];
+          if (!freshTrack) {
+            setState((s) => ({ ...s, error: 'Lost audio track during live subtitles.' }));
+            liveLoopActiveRef.current = false;
+            setLiveSubtitlesEnabled(false);
+            return;
+          }
+
+          const audioOnlyStream = new MediaStream([freshTrack]);
+          let recorder: MediaRecorder;
+          try {
+            recorder = new MediaRecorder(audioOnlyStream, {
+              mimeType: mime,
+              audioBitsPerSecond: fmt.defaultBitRate,
+            });
+          } catch (segmentErr: any) {
+            setState((s) => ({ ...s, error: `Live subtitle recorder failed: ${segmentErr?.message || String(segmentErr)}` }));
+            liveLoopActiveRef.current = false;
+            setLiveSubtitlesEnabled(false);
+            return;
+          }
+
+          liveRecorderRef.current = recorder;
+          const chunks: Blob[] = [];
+
+          recorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) {
+              chunks.push(ev.data);
+            }
+          };
+
+          recorder.onerror = (event: Event) => {
+            const err = (event as any).error;
+            setState((s) => ({ ...s, error: `Recorder error: ${err?.message || 'unknown error'}` }));
+          };
+
+          recorder.onstop = () => {
+            if (chunks.length > 0) {
+              const payload = new Blob(chunks, { type: mime });
+              void sendChunkToTranscription(payload);
+            }
+
+            if (liveLoopActiveRef.current) {
+              startSegmentRecorder();
+            }
+          };
+
+          recorder.start();
+          window.setTimeout(() => {
+            if (recorder.state === 'recording') {
+              try {
+                recorder.stop();
+              } catch {}
+            }
+          }, segmentTargetMs);
+        };
+
+        setLiveSubtitlesEnabled(true);
+        startSegmentRecorder();
+      } catch (err: any) {
+        setState((s) => ({ ...s, error: `Failed to start live subtitles: ${err?.message || String(err)}` }));
+      }
+    }, [stream, liveSubtitlesEnabled, opts?.segmentDurationSec, opts?.onTranscription, sendChunkToTranscription]),
+
+    stopLiveSubtitles: useCallback(() => {
+      try {
+        liveLoopActiveRef.current = false;
+        const recorder = liveRecorderRef.current;
+        if (recorder) {
+          liveRecorderRef.current = null;
+          if (recorder.state === 'recording') {
+            recorder.stop();
+          }
+        }
+        setLiveSubtitlesEnabled(false);
+      } catch (err: any) {
+        setState((s) => ({ ...s, error: `Failed to stop live subtitles: ${err?.message || String(err)}` }));
+      }
+    }, []),
+
+    liveSubtitlesEnabled,
   };
 }
 
 function inferExtensionFromMime(mime: string): string | null {
   if (!mime) return null;
+  if (mime.includes('wav')) return 'wav';
   if (mime.includes('webm')) return 'webm';
   if (mime.includes('mp4')) return 'm4a';
   if (mime.includes('mpeg')) return 'mp3';
